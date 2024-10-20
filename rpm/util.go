@@ -4,14 +4,43 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
 	"path"
+	"path/filepath"
 	"strings"
 )
+
+func CheckTools(signature bool) error {
+	tools := buildTools
+	if signature {
+		tools = append(tools, signatureTools...)
+	}
+	toolsNotFound := make([]string, 0)
+	for _, tool := range tools {
+		if _, err := exec.LookPath(tool); err != nil {
+			toolsNotFound = append(toolsNotFound, tool)
+		}
+	}
+
+	if len(toolsNotFound) != 0 {
+		return errors.New(fmt.Sprintf("Required tools not found. [%s]", strings.Join(toolsNotFound, ",")))
+	}
+
+	return nil
+}
+
+func GetTools(signature bool) []string {
+	tools := buildTools
+	if signature {
+		tools = append(tools, signatureTools...)
+	}
+	return tools
+}
 
 func setupRpmTree() error {
 	setupTreeCmd := exec.Command("rpmdev-setuptree")
@@ -21,17 +50,19 @@ func setupRpmTree() error {
 	return setupTreeCmd.Run()
 }
 
-func getSourceDirectory() (string, error) {
-
-	if err := setupRpmTree(); err != nil {
-		return "", errors.Join(errors.New("Unable to setup rpm tree"), err)
-	}
-
-	rpmOutput, err := exec.Command("rpm", "--eval", "%{_sourcedir}").Output()
+func evalMacro(macro string) (string, error) {
+	rpmOutput, err := exec.Command("rpm", "--eval", macro).Output()
 	if err != nil {
 		return "", err
 	}
-	sourceDir := strings.TrimSpace(string(rpmOutput))
+	return strings.TrimSpace(string(rpmOutput)), nil
+}
+
+func GetSourceDirectory() (string, error) {
+	sourceDir, err := evalMacro("%{_sourcedir}")
+	if err != nil {
+		return "", err
+	}
 	info, err := os.Stat(sourceDir)
 	if err != nil {
 		return "", err
@@ -42,6 +73,82 @@ func getSourceDirectory() (string, error) {
 	}
 
 	return sourceDir, nil
+}
+
+func emptyDirectory(directoryPath string) error {
+	d, err := os.Open(directoryPath)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	contents, err := d.Readdir(0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+
+	for _, content := range contents {
+		contentPath := path.Join(directoryPath, content.Name())
+		err = os.RemoveAll(contentPath)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func EmptyRpmDirectory() error {
+	rpmDir, err := evalMacro("%{_rpmdir}")
+	if err != nil {
+		return err
+	}
+	return emptyDirectory(rpmDir)
+}
+
+func EmptySrpmDirectory() error {
+	srpmDir, err := evalMacro("%{_srcrpmdir}")
+	if err != nil {
+		return err
+	}
+	return emptyDirectory(srpmDir)
+}
+
+func getPackages(directoryPath string) ([]string, error) {
+	packages := make([]string, 0)
+
+	err := filepath.Walk(directoryPath, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == directoryPath || info.IsDir() {
+			return nil
+		}
+
+		if strings.HasSuffix(path, ".rpm") {
+			packages = append(packages, path)
+		}
+
+		return nil
+	})
+
+	return packages, err
+}
+
+func GetRpmPackages() ([]string, error) {
+	rpmDir, err := evalMacro("%{_rpmdir}")
+	if err != nil {
+		return nil, err
+	}
+	return getPackages(rpmDir)
+}
+
+func GetSrpmPackages() ([]string, error) {
+	srpmDir, err := evalMacro("%{_srcrpmdir}")
+	if err != nil {
+		return nil, err
+	}
+	return getPackages(srpmDir)
 }
 
 func copyFile(destinationPath, sourcePath string) error {
@@ -96,7 +203,11 @@ func downloadUrl(destinationPath string, sourceUrl *url.URL) error {
 }
 
 func DownloadSources(specPath string) error {
-	sourceDir, err := getSourceDirectory()
+	if err := setupRpmTree(); err != nil {
+		return errors.Join(errors.New("Unable to setup rpm tree"), err)
+	}
+
+	sourceDir, err := GetSourceDirectory()
 	if err != nil {
 		return err
 	}

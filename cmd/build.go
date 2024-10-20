@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"errors"
 	"os"
-	"os/exec"
 
 	"github.com/ps-gill/rpmtool/rpm"
 	"github.com/spf13/cobra"
@@ -10,33 +10,44 @@ import (
 
 var (
 	buildCmd = &cobra.Command{
-		Use:  "build [spec]",
+		Use:   "build [spec]",
 		Short: "Build package from a .spec file",
-		Args: cobra.ExactArgs(1),
-		RunE: build,
+		Args:  cobra.ExactArgs(1),
+		RunE:  build,
 	}
-	flagLatestDeps = "latest-deps"
-	flagSkipDeps   = "skip-deps"
-	flagSrpm       = "srpm"
+	flagBuildLatestDeps       = "latest-deps"
+	flagBuildSkipDeps         = "skip-deps"
+	flagBuildSrpm             = "srpm"
+	flagBuildGpgKey           = "gpg-key"
+	flagBuildGpgKeyPassphrase = "gpg-key-passphrase"
+	flagBuildGpgKeyId         = "gpg-key-id"
 )
 
 func init() {
-	buildCmd.Flags().Bool(flagLatestDeps, false, "install latest build dependencies")
-	buildCmd.Flags().Bool(flagSkipDeps, false, "skip build dependencies installation")
-	buildCmd.Flags().Bool(flagSrpm, false, "build srpm instead of rpm")
+	buildCmd.Flags().Bool(flagBuildLatestDeps, false, "install latest build dependencies")
+	buildCmd.Flags().Bool(flagBuildSkipDeps, false, "skip build dependencies installation")
+	buildCmd.Flags().Bool(flagBuildSrpm, false, "build srpm instead of rpm")
+	buildCmd.Flags().String(flagBuildGpgKey, "", "gpg key")
+	buildCmd.Flags().String(flagBuildGpgKeyPassphrase, "", "gpg key passphrase")
+	buildCmd.Flags().String(flagBuildGpgKeyId, "", "gpg key Id")
 	rootCmd.AddCommand(buildCmd)
 }
 
 func build(cmd *cobra.Command, args []string) error {
 	specPath := args[0]
 
-	srpm, err := cmd.Flags().GetBool(flagSrpm)
+	srpm, err := cmd.Flags().GetBool(flagBuildSrpm)
 	if err != nil {
 		return err
 	}
 
-	skipDeps, err := cmd.Flags().GetBool(flagSkipDeps)
+	skipDeps, err := cmd.Flags().GetBool(flagBuildSkipDeps)
 	if err != nil {
+		return err
+	}
+
+	signatureKey := getSignatureKey(cmd)
+	if err := rpm.CheckTools(signatureKey != nil); err != nil {
 		return err
 	}
 
@@ -45,7 +56,7 @@ func build(cmd *cobra.Command, args []string) error {
 	}
 
 	if !srpm && !skipDeps {
-		latestDeps, err := cmd.Flags().GetBool(flagLatestDeps)
+		latestDeps, err := cmd.Flags().GetBool(flagBuildLatestDeps)
 		if err != nil {
 			return err
 		}
@@ -55,22 +66,77 @@ func build(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := runRpmBuild(specPath, srpm); err != nil {
+	if srpm {
+		if err := rpm.EmptySrpmDirectory(); err != nil {
+			return err
+		}
+	} else {
+		if err := rpm.EmptyRpmDirectory(); err != nil {
+			return err
+		}
+	}
+
+	if err := rpm.Build(specPath, srpm); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func runRpmBuild(specPath string, srpm bool) error {
-	buildType := "-bb"
-	if srpm {
-		buildType = "-bs"
+	if signatureKey == nil {
+		return nil
 	}
 
-	runRpmCmd := exec.Command("rpmbuild", buildType, specPath)
-	runRpmCmd.Stdin = os.Stdin
-	runRpmCmd.Stdout = os.Stdout
-	runRpmCmd.Stderr = os.Stderr
-	return runRpmCmd.Run()
+	gpgHome, err := rpm.SetupGpgKey(signatureKey)
+	if err != nil {
+		return err
+	}
+	defer gpgHome.Close()
+
+	var rpmPackages []string
+	if srpm {
+		if rpmPackages, err = rpm.GetSrpmPackages(); err != nil {
+			return err
+		}
+	} else {
+		if rpmPackages, err = rpm.GetRpmPackages(); err != nil {
+			return err
+		}
+	}
+
+	if rpmPackages == nil || len(rpmPackages) == 0 {
+		return errors.New("No package found")
+	}
+
+	return rpm.SignPackages(gpgHome, signatureKey, rpmPackages...)
+}
+
+func getSignatureKey(cmd *cobra.Command) *rpm.GpgKey {
+	gpgKey, err := cmd.Flags().GetString(flagBuildGpgKey)
+	if err != nil {
+		return nil
+	}
+
+	gpgKeyPassphrase, err := cmd.Flags().GetString(flagBuildGpgKeyPassphrase)
+	if err != nil {
+		return nil
+	}
+
+	gpgKeyId, err := cmd.Flags().GetString(flagBuildGpgKeyId)
+	if err != nil {
+		return nil
+	}
+
+	if gpgKey == "" || gpgKeyPassphrase == "" || gpgKeyId == "" {
+		return nil
+	}
+	info, err := os.Stat(gpgKey)
+	if err != nil {
+		return nil
+	}
+	if info.IsDir() {
+		return nil
+	}
+	return &rpm.GpgKey{
+		Key:           gpgKey,
+		KeyPassphrase: gpgKeyPassphrase,
+		KeyId:         gpgKeyId,
+	}
 }

@@ -7,7 +7,17 @@ import "C"
 
 import (
 	"errors"
+	"os"
+	"os/exec"
 	"unsafe"
+)
+
+var (
+	buildTools []string = []string{
+		"dnf",
+		"rpm",
+		"rpmbuild",
+	}
 )
 
 type Spec struct {
@@ -63,4 +73,18 @@ func ParseSpec(path string) (*Spec, error) {
 	return &Spec{
 		rpmSpec: rpmSpec,
 	}, nil
+}
+
+func Build(specPath string, srpm bool) error {
+	buildType := "-bb"
+	if srpm {
+		buildType = "-bs"
+	}
+
+	runRpmCmd := exec.Command("rpmbuild", buildType, specPath)
+	runRpmCmd.Stdin = os.Stdin
+	runRpmCmd.Stdout = os.Stdout
+	runRpmCmd.Stderr = os.Stderr
+
+	return runRpmCmd.Run()
 }
