@@ -4,13 +4,15 @@ A CLI for rpm packages.
 
 ## Building
 
-Install `go`, `gcc` and `rpm-devel`.
+Install `go`, `gcc`, `ld` and `rpm-devel`.
 
 ```sh
-dnf install golang gcc rpm-devel
+dnf install binutils golang gcc rpm-devel
 ```
 
 Build `rpmtool` exectuable by running `go build`.
+
+Also, there is a rpm spec available [here](https://gitlab.com/pgill/rpmtool-rpm).
 
 ## Usage
 

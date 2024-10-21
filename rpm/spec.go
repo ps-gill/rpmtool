@@ -17,6 +17,7 @@ var (
 		"dnf",
 		"rpm",
 		"rpmbuild",
+		"rpmdev-setuptree",
 	}
 )
 
