@@ -257,8 +257,18 @@ func InstallBuildDependencies(specPath string, latest bool) error {
 		return err
 	}
 
+	dnf5, err := isDnf5()
+	if err != nil {
+		return err
+	}
+
 	cmd := "dnf"
 	args := []string{"builddep", "--assumeyes", "--spec", specPath}
+
+	if dnf5 {
+		args = []string{"builddep", "--assumeyes", specPath}
+	}
+
 	if currentUser.Uid != "0" {
 		cmd = "sudo"
 		args = append([]string{"dnf"}, args...)
@@ -273,4 +283,27 @@ func InstallBuildDependencies(specPath string, latest bool) error {
 	setupTreeCmd.Stdout = os.Stdout
 	setupTreeCmd.Stderr = os.Stderr
 	return setupTreeCmd.Run()
+}
+
+func isDnf5() (bool, error) {
+	dnfExec, err := exec.LookPath("dnf")
+	if err != nil {
+		return false, err
+	}
+
+	dnfExecInfo, err := os.Lstat(dnfExec)
+	if err != nil {
+		return false, err
+	}
+
+	if dnfExecInfo.Mode() & os.ModeSymlink == 0 {
+		return false, nil
+	}
+
+	dnfDest, err := os.Readlink(dnfExec)
+	if err != nil {
+		return false, err
+	}
+
+	return strings.HasSuffix(dnfDest, "dnf5"), nil
 }
