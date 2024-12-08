@@ -2,22 +2,75 @@ package rpm
 
 /*
 #include <rpm/rpmbuild.h>
+#include <rpm/rpmlog.h>
+
+int rpmtool_rpmSpecBuild(char * specFile, int buildSrpm)
+{
+	// replicate rpmbuild
+	int rc = 1;
+	rpmSetVerbosity(RPMLOG_INFO);
+	rpmts ts = rpmtsCreate();
+	rpmtsSetRootDir(ts, rpmcliRootDir);
+	rpmtsSetFlags(ts, rpmtsFlags(ts) | RPMTRANS_FLAG_NOPLUGINS);
+	struct rpmBuildArguments_s ba;
+	if (buildSrpm)
+	{
+		ba.buildAmount = RPMBUILD_PACKAGESOURCE;
+	}
+	else
+	{
+		ba.buildAmount = RPMBUILD_PACKAGESOURCE
+			| RPMBUILD_PACKAGEBINARY
+			| RPMBUILD_CLEAN
+			| RPMBUILD_RMBUILD
+			| RPMBUILD_INSTALL
+			| RPMBUILD_CHECK
+			| RPMBUILD_BUILD
+			| RPMBUILD_CONF
+			| RPMBUILD_BUILDREQUIRES
+			| RPMBUILD_DUMPBUILDREQUIRES
+			| RPMBUILD_CHECKBUILDREQUIRES
+			| RPMBUILD_PREP
+			| RPMBUILD_MKBUILDDIR;
+	}
+	ba.rootdir = rpmcliRootDir;
+	ba.cookie = NULL;
+
+	rpmVSFlags vsflags, ovsflags;
+	vsflags = rpmExpandNumeric("%{_vsflags_build}") | rpmcliVSFlags;
+	ovsflags = rpmtsSetVSFlags(ts, vsflags);
+
+	rpmSpec spec = rpmSpecParse(specFile, RPMSPEC_NOFINALIZE, NULL);
+	if (spec == NULL)
+	{
+		rpmtsFree(ts);
+		return rc;
+	}
+
+	if (rpmMkdirs(rpmcliRootDir, "%{_topdir}:%{_builddir}:%{_rpmdir}:%{_srcrpmdir}"))
+	{
+		rpmSpecFree(spec);
+		rpmtsFree(ts);
+		return rc;
+	}
+
+	rc = rpmSpecBuild(ts, spec, &ba);
+	rpmSpecFree(spec);
+	rpmtsFree(ts);
+	return rc;
+}
+
 */
 import "C"
 
 import (
 	"errors"
-	"os"
-	"os/exec"
 	"unsafe"
 )
 
 var (
-	buildTools []string = []string{
+	buildTools = []string{
 		"dnf",
-		"rpm",
-		"rpmbuild",
-		"rpmdev-setuptree",
 	}
 )
 
@@ -77,15 +130,18 @@ func ParseSpec(path string) (*Spec, error) {
 }
 
 func Build(specPath string, srpm bool) error {
-	buildType := "-bb"
+	buildSrpm := 0
 	if srpm {
-		buildType = "-bs"
+		buildSrpm = 1
 	}
 
-	runRpmCmd := exec.Command("rpmbuild", buildType, specPath)
-	runRpmCmd.Stdin = os.Stdin
-	runRpmCmd.Stdout = os.Stdout
-	runRpmCmd.Stderr = os.Stderr
+	cSpecPath := C.CString(specPath)
+	defer C.free(unsafe.Pointer(cSpecPath))
 
-	return runRpmCmd.Run()
+	rc := C.rpmtool_rpmSpecBuild(cSpecPath, C.int(buildSrpm))
+
+	if rc != 0 {
+		return errors.New("build failed")
+	}
+	return nil
 }

@@ -34,6 +34,17 @@ func CheckTools(signature bool) error {
 	return nil
 }
 
+func IsPathFile(path string) error {
+	pathStat, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if pathStat.IsDir() {
+		return errors.New(fmt.Sprintf("path is a directory. path=%s", path))
+	}
+	return nil
+}
+
 func GetTools(signature bool) []string {
 	tools := buildTools
 	if signature {
@@ -43,36 +54,19 @@ func GetTools(signature bool) []string {
 }
 
 func setupRpmTree() error {
-	setupTreeCmd := exec.Command("rpmdev-setuptree")
-	setupTreeCmd.Stdin = os.Stdin
-	setupTreeCmd.Stdout = os.Stdout
-	setupTreeCmd.Stderr = os.Stderr
-	return setupTreeCmd.Run()
-}
-
-func evalMacro(macro string) (string, error) {
-	rpmOutput, err := exec.Command("rpm", "--eval", macro).Output()
-	if err != nil {
-		return "", err
+	for _, dir := range []string{rpmTree.BuildDir, rpmTree.RpmDir, rpmTree.SourceDir, rpmTree.SpecDir, rpmTree.SrpmDir} {
+		stat, err := os.Stat(dir)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if stat == nil {
+			return os.MkdirAll(dir, 0750)
+		}
+		if !stat.IsDir() {
+			return errors.New(fmt.Sprintf("path already exists and is not a directory. %s", dir))
+		}
 	}
-	return strings.TrimSpace(string(rpmOutput)), nil
-}
-
-func GetSourceDirectory() (string, error) {
-	sourceDir, err := evalMacro("%{_sourcedir}")
-	if err != nil {
-		return "", err
-	}
-	info, err := os.Stat(sourceDir)
-	if err != nil {
-		return "", err
-	}
-
-	if !info.IsDir() {
-		return "", errors.New(fmt.Sprintf("%s is not a directory", sourceDir))
-	}
-
-	return sourceDir, nil
+	return nil
 }
 
 func emptyDirectory(directoryPath string) error {
@@ -99,19 +93,11 @@ func emptyDirectory(directoryPath string) error {
 }
 
 func EmptyRpmDirectory() error {
-	rpmDir, err := evalMacro("%{_rpmdir}")
-	if err != nil {
-		return err
-	}
-	return emptyDirectory(rpmDir)
+	return emptyDirectory(rpmTree.RpmDir)
 }
 
 func EmptySrpmDirectory() error {
-	srpmDir, err := evalMacro("%{_srcrpmdir}")
-	if err != nil {
-		return err
-	}
-	return emptyDirectory(srpmDir)
+	return emptyDirectory(rpmTree.SrpmDir)
 }
 
 func getPackages(directoryPath string) ([]string, error) {
@@ -136,19 +122,11 @@ func getPackages(directoryPath string) ([]string, error) {
 }
 
 func GetRpmPackages() ([]string, error) {
-	rpmDir, err := evalMacro("%{_rpmdir}")
-	if err != nil {
-		return nil, err
-	}
-	return getPackages(rpmDir)
+	return getPackages(rpmTree.RpmDir)
 }
 
 func GetSrpmPackages() ([]string, error) {
-	srpmDir, err := evalMacro("%{_srcrpmdir}")
-	if err != nil {
-		return nil, err
-	}
-	return getPackages(srpmDir)
+	return getPackages(rpmTree.SrpmDir)
 }
 
 func copyFile(destinationPath, sourcePath string) error {
@@ -172,7 +150,7 @@ func downloadUrl(destinationPath string, sourceUrl *url.URL) error {
 	info, err := os.Stat(destinationPath)
 	if err == nil {
 		if info.IsDir() {
-			return errors.New("Can't download, destination path is a directory")
+			return errors.New("can't download, destination path is a directory")
 		}
 		fmt.Printf("Download skipped. File already exists. path=%s\n", destinationPath)
 		return nil
@@ -204,12 +182,7 @@ func downloadUrl(destinationPath string, sourceUrl *url.URL) error {
 
 func DownloadSources(specPath string) error {
 	if err := setupRpmTree(); err != nil {
-		return errors.Join(errors.New("Unable to setup rpm tree"), err)
-	}
-
-	sourceDir, err := GetSourceDirectory()
-	if err != nil {
-		return err
+		return errors.Join(errors.New("unable to setup rpm tree"), err)
 	}
 
 	spec, err := ParseSpec(specPath)
@@ -231,14 +204,14 @@ func DownloadSources(specPath string) error {
 		}
 
 		if sourceUrl.Scheme == "" {
-			destinationPath := path.Join(sourceDir, source.Path)
+			destinationPath := path.Join(rpmTree.SourceDir, source.Path)
 			sourcePath := path.Join(specDirectory, source.Path)
 			fmt.Printf("Copying %s to %s\n", sourcePath, destinationPath)
 			if err = copyFile(destinationPath, sourcePath); err != nil {
 				errors.Join(errors.New(fmt.Sprintf("Unable to copy source. destination=%s source=%s", destinationPath, sourcePath)), err)
 			}
 		} else if sourceUrl.Scheme == "http" || sourceUrl.Scheme == "https" {
-			destinationPath := path.Join(sourceDir, source.FileName)
+			destinationPath := path.Join(rpmTree.SourceDir, source.FileName)
 			fmt.Printf("Downloading %s to %s\n", sourceUrl.String(), destinationPath)
 			if err = downloadUrl(destinationPath, sourceUrl); err != nil {
 				return errors.Join(errors.New(fmt.Sprintf("Unable to copy source. destination=%s source=%s", destinationPath, sourceUrl.String())), err)
@@ -296,7 +269,7 @@ func isDnf5() (bool, error) {
 		return false, err
 	}
 
-	if dnfExecInfo.Mode() & os.ModeSymlink == 0 {
+	if dnfExecInfo.Mode()&os.ModeSymlink == 0 {
 		return false, nil
 	}
 

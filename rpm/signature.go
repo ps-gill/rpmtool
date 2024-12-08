@@ -1,102 +1,77 @@
 package rpm
 
+/*
+#include <rpm/rpmmacro.h>
+#include <rpm/rpmsign.h>
+
+void rpmtool_rpmSignSetup(char *sqPath, char *sqSignCmd, char *extraArgs)
+{
+	rpmPushMacro(NULL, "__gpg", NULL, sqPath, RMIL_GLOBAL);
+	rpmPushMacro(NULL, "__gpg_sign_cmd", NULL, sqSignCmd, RMIL_GLOBAL);
+	rpmPushMacro(NULL, "_sq_sign_cmd_extra_args", NULL, extraArgs, RMIL_GLOBAL);
+}
+
+int rpmtool_rpmPkgSign(char *packagePath, char *keyId)
+{
+	struct rpmSignArgs signArgs = {.keyid = keyId};
+	return rpmPkgSign(packagePath, &signArgs);
+}
+
+void rpmtool_rpmSignSetupClear()
+{
+	rpmPopMacro(NULL, "_sq_sign_cmd_extra_args");
+	rpmPopMacro(NULL, "__gpg_sign_cmd");
+	rpmPopMacro(NULL, "__gpg");
+}
+*/
+import "C"
+
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path"
+	"unsafe"
 )
 
 var (
-	signatureTools []string = []string{
-		"rpmsign",
-		"gpg-agent",
-		"gpgconf",
-		"gpg",
+	signatureTools = []string{
+		"sq",
 	}
+	sqSignCmdMacro string = `%{shescape:%{__gpg}} %{__gpg} sign --signer %{_gpg_name} %{?_sq_sign_cmd_extra_args} --signature-file --output %{shescape:%{__signature_filename}} %{shescape:%{__plaintext_filename}}`
 )
 
-type GpgKey struct {
-	Key, KeyPassphrase, KeyId string
+type PgpKey struct {
+	KeyPath, KeyPassphraseFile, KeyId string
 }
 
-type GpgHome struct {
-	Path string
-}
-
-func (gh *GpgHome) Close() {
-	environ := os.Environ()
-	environ = append(environ, fmt.Sprintf("GNUPGHOME=%s", gh.Path))
-	shutdownGpgAgentCmd := exec.Command("gpgconf", "--kill", "--gpg-agent")
-	shutdownGpgAgentCmd.Env = environ
-	err := shutdownGpgAgentCmd.Run()
-	if err != nil {
-		fmt.Printf("%s\n", err.Error())
-	}
-
-	err = os.RemoveAll(gh.Path)
-	if err != nil {
-		fmt.Printf("%s\n", err.Error())
-	}
-}
-
-func configureGpgAgent(gpgHome string) error {
-	gpgAgentConfPath := path.Join(gpgHome, "gpg-agent.conf")
-	gpgAgentConf, err := os.OpenFile(gpgAgentConfPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0700)
+func SignPackages(key *PgpKey, rpmPackages ...string) error {
+	sqPath, err := exec.LookPath("sq")
 	if err != nil {
 		return err
 	}
-	defer gpgAgentConf.Close()
-	_, err = gpgAgentConf.WriteString("allow-loopback-pinentry\n")
-	return err
-}
+	cSqPath := C.CString(sqPath)
+	defer C.free(unsafe.Pointer(cSqPath))
+	cSqSignCmdMacro := C.CString(sqSignCmdMacro)
+	defer C.free(unsafe.Pointer(cSqSignCmdMacro))
+	cKeyId := C.CString(key.KeyId)
+	defer C.free(unsafe.Pointer(cKeyId))
 
-func configureGpgHome(gpgHome string, signatureKey *GpgKey) error {
-	environ := os.Environ()
-	environ = append(environ, fmt.Sprintf("GNUPGHOME=%s", gpgHome))
+	extraArgs := fmt.Sprintf("--batch --signer-file '%s' --password-file '%s'", key.KeyPath, key.KeyPassphraseFile)
+	cExtraArgs := C.CString(extraArgs)
+	defer C.free(unsafe.Pointer(cExtraArgs))
 
-	if err := configureGpgAgent(gpgHome); err != nil {
-		return err
-	}
+	C.rpmtool_rpmSignSetup(cSqPath, cSqSignCmdMacro, cExtraArgs)
 
-	gpgImportCmd := exec.Command("gpg", "--batch", "--yes", "--import", signatureKey.Key)
-	gpgImportCmd.Env = environ
-	err := gpgImportCmd.Run()
-	return err
-}
-
-func SetupGpgKey(signatureKey *GpgKey) (*GpgHome, error) {
-	gpgHome, err := os.MkdirTemp("", "rpmtool.gpg.")
-	if err != nil {
-		return nil, err
-	}
-
-	err = configureGpgHome(gpgHome, signatureKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return &GpgHome{
-		Path: gpgHome,
-	}, nil
-}
-
-func SignPackages(gpgHome *GpgHome, signatureKey *GpgKey, rpmPackages ...string) error {
 	for _, rpmPackage := range rpmPackages {
 		fmt.Printf("Signing %s\n", rpmPackage)
-		args := []string{
-			"--define", fmt.Sprintf("_gpg_name %s", signatureKey.KeyId),
-			"--define", fmt.Sprintf("_gpg_path %s", gpgHome.Path),
-			"--define", fmt.Sprintf("_gpg_sign_cmd_extra_args --batch --yes --pinentry-mode loopback --passphrase '%s'", signatureKey.KeyPassphrase),
-			"--addsign", rpmPackage,
-		}
-
-		rpmSignCmd := exec.Command("rpmsign", args...)
-		err := rpmSignCmd.Run()
-		if err != nil {
-			return errors.Join(errors.New(fmt.Sprintf("Failed to sign package. path=%s", rpmPackage)), err)
+		cRpmPackage := C.CString(rpmPackage)
+		defer C.free(unsafe.Pointer(cRpmPackage))
+		rc := C.rpmtool_rpmPkgSign(cRpmPackage, cKeyId)
+		if rc != 0 {
+			err = errors.New(fmt.Sprintf("Signing failed. rpm=%s", rpmPackage))
+			break
 		}
 	}
-	return nil
+	C.rpmtool_rpmSignSetupClear()
+	return err
 }

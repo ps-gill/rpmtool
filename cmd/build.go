@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"os"
 
 	"github.com/ps-gill/rpmtool/rpm"
 	"github.com/spf13/cobra"
@@ -15,21 +14,21 @@ var (
 		Args:  cobra.ExactArgs(1),
 		RunE:  build,
 	}
-	flagBuildLatestDeps       = "latest-deps"
-	flagBuildSkipDeps         = "skip-deps"
-	flagBuildSrpm             = "srpm"
-	flagBuildGpgKey           = "gpg-key"
-	flagBuildGpgKeyPassphrase = "gpg-key-passphrase"
-	flagBuildGpgKeyId         = "gpg-key-id"
+	flagBuildLatestDeps        = "latest-deps"
+	flagBuildSkipDeps          = "skip-deps"
+	flagBuildSrpm              = "srpm"
+	flagBuildKey               = "key"
+	flagBuildKeyPassphraseFile = "key-passphrase-file"
+	flagBuildKeyId             = "key-id"
 )
 
 func init() {
 	buildCmd.Flags().Bool(flagBuildLatestDeps, false, "install latest build dependencies")
 	buildCmd.Flags().Bool(flagBuildSkipDeps, false, "skip build dependencies installation")
 	buildCmd.Flags().Bool(flagBuildSrpm, false, "build srpm instead of rpm")
-	buildCmd.Flags().String(flagBuildGpgKey, "", "gpg key")
-	buildCmd.Flags().String(flagBuildGpgKeyPassphrase, "", "gpg key passphrase")
-	buildCmd.Flags().String(flagBuildGpgKeyId, "", "gpg key Id")
+	buildCmd.Flags().String(flagBuildKey, "", "pgp key")
+	buildCmd.Flags().String(flagBuildKeyPassphraseFile, "", "pgp key passphrase")
+	buildCmd.Flags().String(flagBuildKeyId, "", "pgp key Id")
 	rootCmd.AddCommand(buildCmd)
 }
 
@@ -84,12 +83,6 @@ func build(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	gpgHome, err := rpm.SetupGpgKey(signatureKey)
-	if err != nil {
-		return err
-	}
-	defer gpgHome.Close()
-
 	var rpmPackages []string
 	if srpm {
 		if rpmPackages, err = rpm.GetSrpmPackages(); err != nil {
@@ -102,41 +95,40 @@ func build(cmd *cobra.Command, args []string) error {
 	}
 
 	if rpmPackages == nil || len(rpmPackages) == 0 {
-		return errors.New("No package found")
+		return errors.New("no package found")
 	}
 
-	return rpm.SignPackages(gpgHome, signatureKey, rpmPackages...)
+	return rpm.SignPackages(signatureKey, rpmPackages...)
 }
 
-func getSignatureKey(cmd *cobra.Command) *rpm.GpgKey {
-	gpgKey, err := cmd.Flags().GetString(flagBuildGpgKey)
+func getSignatureKey(cmd *cobra.Command) *rpm.PgpKey {
+	key, err := cmd.Flags().GetString(flagBuildKey)
 	if err != nil {
 		return nil
 	}
 
-	gpgKeyPassphrase, err := cmd.Flags().GetString(flagBuildGpgKeyPassphrase)
+	keyPassphraseFile, err := cmd.Flags().GetString(flagBuildKeyPassphraseFile)
 	if err != nil {
 		return nil
 	}
 
-	gpgKeyId, err := cmd.Flags().GetString(flagBuildGpgKeyId)
+	keyId, err := cmd.Flags().GetString(flagBuildKeyId)
 	if err != nil {
 		return nil
 	}
 
-	if gpgKey == "" || gpgKeyPassphrase == "" || gpgKeyId == "" {
+	if key == "" || keyPassphraseFile == "" || keyId == "" {
 		return nil
 	}
-	info, err := os.Stat(gpgKey)
-	if err != nil {
+	if err = rpm.IsPathFile(key); err != nil {
 		return nil
 	}
-	if info.IsDir() {
+	if err = rpm.IsPathFile(keyPassphraseFile); err != nil {
 		return nil
 	}
-	return &rpm.GpgKey{
-		Key:           gpgKey,
-		KeyPassphrase: gpgKeyPassphrase,
-		KeyId:         gpgKeyId,
+	return &rpm.PgpKey{
+		KeyPath:           key,
+		KeyPassphraseFile: keyPassphraseFile,
+		KeyId:             keyId,
 	}
 }

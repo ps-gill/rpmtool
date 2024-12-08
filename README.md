@@ -29,21 +29,23 @@ Flags:
 ```
 
 ```sh
-$ ./rpmtool build --help
+$ rpmtool build --help
 Build package from a .spec file
 
 Usage:
   rpmtool build [spec] [flags]
 
 Flags:
-      --gpg-key string              gpg key
-      --gpg-key-id string           gpg key Id
-      --gpg-key-passphrase string   gpg key passphrase
-  -h, --help                        help for build
-      --latest-deps                 install latest build dependencies
-      --skip-deps                   skip build dependencies installation
-      --srpm                        build srpm instead of rpm
+  -h, --help                         help for build
+      --key string                   pgp key
+      --key-id string                pgp key Id
+      --key-passphrase-file string   pgp key passphrase
+      --latest-deps                  install latest build dependencies
+      --skip-deps                    skip build dependencies installation
+      --srpm                         build srpm instead of rpm
 ```
+
+Sequoia PGP's [`sq`](https://gitlab.com/sequoia-pgp/sequoia-sq) cli is required for signatures.
 
 ## License
 
