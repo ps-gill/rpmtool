@@ -59,9 +59,14 @@ func setupRpmTree() error {
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		if stat == nil {
-			return os.MkdirAll(dir, 0750)
+
+		if err != nil {
+			if err = os.MkdirAll(dir, 0750); err != nil {
+				return err
+			}
+			continue
 		}
+
 		if !stat.IsDir() {
 			return errors.New(fmt.Sprintf("path already exists and is not a directory. %s", dir))
 		}
