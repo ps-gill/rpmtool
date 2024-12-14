@@ -57,6 +57,10 @@ func SignPackages(key *PgpKey, rpmPackages ...string) error {
 	defer C.free(unsafe.Pointer(cKeyId))
 
 	extraArgs := fmt.Sprintf("--batch --signer-file '%s' --password-file '%s'", key.KeyPath, key.KeyPassphraseFile)
+	if len(key.KeyPassphraseFile) == 0 {
+		extraArgs = fmt.Sprintf("--batch --signer-file '%s'", key.KeyPath)
+	}
+
 	cExtraArgs := C.CString(extraArgs)
 	defer C.free(unsafe.Pointer(cExtraArgs))
 
