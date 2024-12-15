@@ -38,6 +38,7 @@ var (
 		"sq",
 	}
 	sqSignCmdMacro string = `%{shescape:%{__gpg}} %{__gpg} sign --signer %{_gpg_name} %{?_sq_sign_cmd_extra_args} --signature-file --output %{shescape:%{__signature_filename}} %{shescape:%{__plaintext_filename}}`
+	sqSignWithKeyFileCmdMacro string = `%{shescape:%{__gpg}} %{__gpg} sign %{?_sq_sign_cmd_extra_args} --signature-file --output %{shescape:%{__signature_filename}} %{shescape:%{__plaintext_filename}}`
 )
 
 type PgpKey struct {
@@ -49,17 +50,28 @@ func SignPackages(key *PgpKey, rpmPackages ...string) error {
 	if err != nil {
 		return err
 	}
+
+	extraArgs := ""
+	keyId := key.KeyId
+	signCmdMacros := sqSignCmdMacro
+	if len(key.KeyPath) != 0 {
+		extraArgs = fmt.Sprintf("--signer-file '%s'", key.KeyPath)
+		signCmdMacros = sqSignWithKeyFileCmdMacro
+		// with key path ignore key id
+		keyId = "dummy"
+	}
+
+	if len(key.KeyPassphraseFile) != 0 {
+		extraArgs = fmt.Sprintf("%s --batch --password-file '%s'", extraArgs, key.KeyPassphraseFile)
+	}
+
 	cSqPath := C.CString(sqPath)
 	defer C.free(unsafe.Pointer(cSqPath))
-	cSqSignCmdMacro := C.CString(sqSignCmdMacro)
+	cSqSignCmdMacro := C.CString(signCmdMacros)
 	defer C.free(unsafe.Pointer(cSqSignCmdMacro))
-	cKeyId := C.CString(key.KeyId)
+	cKeyId := C.CString(keyId)
 	defer C.free(unsafe.Pointer(cKeyId))
 
-	extraArgs := fmt.Sprintf("--batch --signer-file '%s' --password-file '%s'", key.KeyPath, key.KeyPassphraseFile)
-	if len(key.KeyPassphraseFile) == 0 {
-		extraArgs = fmt.Sprintf("--batch --signer-file '%s'", key.KeyPath)
-	}
 
 	cExtraArgs := C.CString(extraArgs)
 	defer C.free(unsafe.Pointer(cExtraArgs))

@@ -117,14 +117,17 @@ func getSignatureKey(cmd *cobra.Command) *rpm.PgpKey {
 		return nil
 	}
 
-	if len(key) == 0 || len(keyId) == 0 {
-		return nil
-	}
-	if err = rpm.IsPathFile(key); err != nil {
+	if len(key) == 0 && len(keyId) == 0 {
 		return nil
 	}
 
-	if len(keyPassphraseFile) == 0 {
+	if len(key) != 0 {
+		if err = rpm.IsPathFile(key); err != nil {
+			return nil
+		}
+	}
+
+	if len(keyPassphraseFile) != 0 {
 		if err = rpm.IsPathFile(keyPassphraseFile); err != nil {
 			return nil
 		}
