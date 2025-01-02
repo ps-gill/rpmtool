@@ -31,18 +31,18 @@ pipeline {
   }
   post {
     failure {
-      rpmToolNotify()
+      emailext(
+        to: '$DEFAULT_RECIPIENTS',
+        subject: '$DEFAULT_SUBJECT',
+        body: '$DEFAULT_CONTENT',
+      )
     }
     fixed {
-      rpmToolNotify()
+      emailext(
+        to: '$DEFAULT_RECIPIENTS',
+        subject: '$DEFAULT_SUBJECT',
+        body: '$DEFAULT_CONTENT',
+      )
     }
   }
-}
-
-def rpmToolNotify() {
-  emailext(
-    to: '$DEFAULT_RECIPIENTS',
-    subject: '$DEFAULT_SUBJECT',
-    body: '$DEFAULT_CONTENT',
-  )
 }
