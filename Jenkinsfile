@@ -6,6 +6,16 @@ pipeline {
   stages {
       stage('base') {
         parallel {
+          stage('epel-9') {
+            agent { label 'epel-9' }
+            steps {
+              sh '''
+              set -euo pipefail
+              sudo dnf install golang-bin rpm rpm-devel --assumeyes
+              CGO_CFLAGS="-DRPMTOOL_DISABLE_RPMBUILD_MKBUILDDIR -DRPMTOOL_DISABLE_RPMSPEC_NOFINALIZE -DRPMTOOL_DISABLE_BUILDROOTDIR -DRPMTOOL_DISABLE_RPMBUILD_CONF" go build
+              '''
+            }
+          }
           stage('fedora-40') {
             agent { label 'fedora-40' }
             steps {
