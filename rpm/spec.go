@@ -26,16 +26,17 @@ int rpmtool_rpmSpecBuild(char * specFile, int buildSrpm)
 			| RPMBUILD_INSTALL
 			| RPMBUILD_CHECK
 			| RPMBUILD_BUILD
+#ifndef RPMTOOL_DISABLE_RPMBUILD_CONF
 			| RPMBUILD_CONF
+#endif
 			| RPMBUILD_BUILDREQUIRES
 			| RPMBUILD_DUMPBUILDREQUIRES
 			| RPMBUILD_CHECKBUILDREQUIRES
 			| RPMBUILD_PREP
-#ifdef RPMTOOL_LEGACY
-			;
-#else
-			| RPMBUILD_MKBUILDDIR;
+#ifndef RPMTOOL_DISABLE_RPMBUILD_MKBUILDDIR
+			| RPMBUILD_MKBUILDDIR
 #endif
+			;
 	}
 	ba.rootdir = rpmcliRootDir;
 	ba.cookie = NULL;
@@ -44,11 +45,9 @@ int rpmtool_rpmSpecBuild(char * specFile, int buildSrpm)
 	vsflags = rpmExpandNumeric("%{_vsflags_build}") | rpmcliVSFlags;
 	ovsflags = rpmtsSetVSFlags(ts, vsflags);
 
-	rpmSpecFlags spec_flags =
-#ifdef RPMTOOL_LEGACY
-	0;
-#else
-	RPMSPEC_NOFINALIZE;
+	rpmSpecFlags spec_flags = 0;
+#ifndef RPMTOOL_DISABLE_RPMSPEC_NOFINALIZE
+	spec_flags = RPMSPEC_NOFINALIZE;
 #endif
 
 	rpmSpec spec = rpmSpecParse(specFile, spec_flags, NULL);
@@ -58,7 +57,7 @@ int rpmtool_rpmSpecBuild(char * specFile, int buildSrpm)
 		return rc;
 	}
 
-#ifdef RPMTOOL_LEGACY
+#ifndef RPMTOOL_DISABLE_BUILDROOTDIR
 	if (rpmMkdirs(rpmcliRootDir, "%{_topdir}:%{_builddir}:%{_rpmdir}:%{_srcrpmdir}:%{_buildrootdir}"))
 #else
 	if (rpmMkdirs(rpmcliRootDir, "%{_topdir}:%{_builddir}:%{_rpmdir}:%{_srcrpmdir}"))
