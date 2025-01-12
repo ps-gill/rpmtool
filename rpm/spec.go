@@ -57,7 +57,7 @@ int rpmtool_rpmSpecBuild(char * specFile, int buildSrpm)
 		return rc;
 	}
 
-#ifndef RPMTOOL_DISABLE_BUILDROOTDIR
+#ifdef RPMTOOL_ENABLE_BUILDROOTDIR
 	if (rpmMkdirs(rpmcliRootDir, "%{_topdir}:%{_builddir}:%{_rpmdir}:%{_srcrpmdir}:%{_buildrootdir}"))
 #else
 	if (rpmMkdirs(rpmcliRootDir, "%{_topdir}:%{_builddir}:%{_rpmdir}:%{_srcrpmdir}"))

@@ -12,7 +12,7 @@ pipeline {
               sh '''
               set -euo pipefail
               sudo dnf install golang-bin rpm rpm-devel --assumeyes
-              CGO_CFLAGS="-DRPMTOOL_DISABLE_RPMBUILD_MKBUILDDIR -DRPMTOOL_DISABLE_RPMSPEC_NOFINALIZE -DRPMTOOL_DISABLE_BUILDROOTDIR -DRPMTOOL_DISABLE_RPMBUILD_CONF" go build
+              CGO_CFLAGS="-DRPMTOOL_DISABLE_RPMBUILD_MKBUILDDIR -DRPMTOOL_DISABLE_RPMSPEC_NOFINALIZE -DRPMTOOL_ENABLE_BUILDROOTDIR -DRPMTOOL_DISABLE_RPMBUILD_CONF" go build
               '''
             }
           }
@@ -22,7 +22,7 @@ pipeline {
               sh '''
               set -euo pipefail
               sudo dnf install golang-bin rpm rpm-devel --assumeyes
-              CGO_CFLAGS="-DRPMTOOL_DISABLE_RPMBUILD_MKBUILDDIR -DRPMTOOL_DISABLE_RPMSPEC_NOFINALIZE -DRPMTOOL_DISABLE_BUILDROOTDIR" go build
+              CGO_CFLAGS="-DRPMTOOL_DISABLE_RPMBUILD_MKBUILDDIR -DRPMTOOL_DISABLE_RPMSPEC_NOFINALIZE -DRPMTOOL_ENABLE_BUILDROOTDIR" go build
               '''
             }
           }
